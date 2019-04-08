@@ -1,13 +1,15 @@
 ﻿#include <Windows.h>
 #include <stdio.h>
 #include <iostream>
+#include <fstream>
 #include "util.h"
 #include "path.hpp"
 #include "cli.h"
 #include "download.h"
 #include "config.h"
+#include "progress.h"
 
-#define EVM_VERSION "1.0.0"
+#define EVM_VERSION "1.0.1"
 
 static void onUnzip(Util::unzCallbackInfo* info, void* param) {
   /*int* line = NULL;
@@ -22,20 +24,38 @@ static void onUnzip(Util::unzCallbackInfo* info, void* param) {
   if (*line == 0) {
     *line = 3;
   }*/
-
-  Util::clearLine(0);
-  printf("Extracting: %.2lf%%", 100 * (double)info->uncompressed / (double)info->total);
+  ProgressBar* prog = (ProgressBar*)param;
+  prog->setRange(0, info->total);
+  prog->setPos(info->uncompressed);
+  prog->print();
+  // Util::clearLine(0);
+  // printf("Extracting: %.2lf%%", 100 * (double)info->uncompressed / (double)info->total);
 }
 
 static void onDownload(progressInfo* info, void* param) {
-  Util::clearLine(0);
-  printf("Downloading %s: %.2lf%%...", Util::w2a(*((std::wstring*)param)).c_str(), 100 * (double)(info->size + info->sum) / info->total);
+  ProgressBar* prog = (ProgressBar*)param;
+  prog->setRange(0, info->total);
+  prog->setBase(info->size);
+  prog->setPos(info->sum);
+  prog->print();
+  // Util::clearLine(0);
+  // printf("Downloading %s: %.2lf%%...", Util::w2a(*((std::wstring*)param)).c_str(), 100 * (double)(info->size + info->sum) / info->total);
+}
+
+static bool uninstall(const std::wstring& version, const Config& config) {
+  std::wstring p = Path::join(config.root, version);
+  return Path::remove(p);
 }
 
 static bool install(const std::wstring& version, const Config& config) {
   if (Path::exists(Path::join(config.root, version))) {
-    printf("Version %s is already installed.\n", Util::w2a(version).c_str());
-    return true;
+    std::wstring currentArch = Util::isX64(Path::join(config.root, version, L"electron.exe")) ? L"x64" : L"ia32";
+    if (currentArch == config.arch) {
+      printf("Version %s (%s) is already installed.\n", Util::w2a(version).c_str(), Util::w2a(config.arch).c_str());
+      return true;
+    } else {
+      if (!uninstall(version, config)) return false;
+    }
   }
 
   std::wstring electronName = std::wstring(L"electron-v") + version + L"-win32-" + config.arch + L".zip";
@@ -46,12 +66,13 @@ static bool install(const std::wstring& version, const Config& config) {
   bool res = true;
 
   if (!Path::exists(zipPath)) {
+    ProgressBar* prog = new ProgressBar(std::wstring(L"Downloading ") + electronName, 0, 100, 0, 0);
     if (config.mirror == L"github") {
       res = download(
         std::wstring(L"https://github.com/electron/electron/releases/download/v") + version + L"/electron-v" + version + L"-win32-" + config.arch + L".zip",
         zipPath,
         onDownload,
-        &electronName
+        prog
       );
     }
     else if (config.mirror == L"taobao") {
@@ -59,7 +80,7 @@ static bool install(const std::wstring& version, const Config& config) {
         std::wstring(L"https://npm.taobao.org/mirrors/electron/") + version + L"/electron-v" + version + L"-win32-" + config.arch + L".zip",
         zipPath,
         onDownload,
-        &electronName
+        prog
       );
     }
     else {
@@ -67,19 +88,21 @@ static bool install(const std::wstring& version, const Config& config) {
         config.mirror + version + L"/electron-v" + version + L"-win32-" + config.arch + L".zip",
         zipPath,
         onDownload,
-        &electronName
+        prog
       );
     }
-    printf("\n");
+    // printf("\n");
+    delete prog;
   }
 
   if (!Path::exists(shatxt)) {
+    ProgressBar* prog = new ProgressBar(std::wstring(L"Downloading ") + shatxtName, 0, 100, 0, 0);
     if (config.mirror == L"github") {
       res = download(
         std::wstring(L"https://github.com/electron/electron/releases/download/v") + version + L"/SHASUMS256.txt",
         shatxt,
         onDownload,
-        &shatxtName
+        prog
       );
     }
     else if (config.mirror == L"taobao") {
@@ -87,7 +110,7 @@ static bool install(const std::wstring& version, const Config& config) {
         std::wstring(L"https://npm.taobao.org/mirrors/electron/") + version + L"/SHASUMS256.txt",
         shatxt,
         onDownload,
-        &shatxtName
+        prog
       );
     }
     else {
@@ -95,16 +118,38 @@ static bool install(const std::wstring& version, const Config& config) {
         config.mirror + version + L"/SHASUMS256.txt",
         shatxt,
         onDownload,
-        &shatxtName
+        prog
       );
     }
-    printf("\n");
+    delete prog;
   }
 
   if (!res) return false;
 
-  res = Util::unzip(zipPath, Path::join(config.root, version), onUnzip);
-  printf("\n");
+  std::string zipSha256 = Util::sha256(zipPath);
+  if (zipSha256 == "") return false;
+
+  std::ifstream shatxtFile(shatxt, std::ios::in);
+  std::string line = "";
+
+  bool checked = false;
+  while (std::getline(shatxtFile, line)) {
+    unsigned int pos = line.find(" *");
+    auto filename = line.substr(pos + 2);
+    if (Util::a2w(filename) == electronName) {
+      auto hash = line.substr(0, pos);
+      if (hash == zipSha256) {
+        checked = true;
+      }
+    }
+  }
+
+  if (!checked) return false;
+
+  ProgressBar* prog = new ProgressBar(std::wstring(L"Extracting ") + electronName, 0, 100, 0, 0);
+  res = Util::unzip(zipPath, Path::join(config.root, version), onUnzip, prog);
+  delete prog;
+  // printf("\n");
   return res;
 }
 
@@ -112,27 +157,27 @@ static void list(const Config& config) {
   auto li = Path::readdir(config.root);
 
   printf("\n");
+
+  std::wstring wver = L"0.0.0";
+  if (Path::isDirectory(config.path)) {
+    std::string ver = Path::readFile(Path::join(config.path, L"version"));
+    if (ver != "") {
+      ver.erase(0, ver.find_first_not_of(" "));
+      ver.erase(ver.find_last_not_of(" ") + 1);
+    }
+    wver = Util::a2w(ver);
+  }
+
   for (unsigned int i = 0; i < li.size(); i++) {
     if (li[i].find_first_of(L".") != li[i].find_last_of(L".") && Path::isDirectory(Path::join(config.root, li[i]))) {
-      std::string ver = Path::readFile(Path::join(config.path, L"version"));
-      if (ver != "") {
-        ver.erase(0, ver.find_first_not_of(" "));
-        ver.erase(ver.find_last_not_of(" ") + 1);
-      }
-      std::wstring wver = Util::a2w(ver);
+      
       if (wver == li[i] || wver == std::wstring(L"v") + li[i]) {
-        printf("  * %s (Currently using %s executable)\n", Util::w2a(li[i]).c_str(), Util::isX64(Path::join(config.root, li[i], L"electron.exe")) ? Util::w2a(L"x64").c_str() : Util::w2a(L"ia32").c_str());
-      }
-      else {
+        printf("  * %s (Currently using %s executable)\n", Util::w2a(li[i]).c_str(), Util::isX64(Path::join(config.path, L"electron.exe")) ? "x64" : "ia32");
+      } else {
         printf("    %s\n", Util::w2a(li[i]).c_str());
       }
     }
   }
-}
-
-static bool uninstall(const std::wstring& version, const Config& config) {
-  std::wstring p = Path::join(config.root, version);
-  return Path::remove(p);
 }
 
 static bool use(const std::wstring& version, const Config& config) {

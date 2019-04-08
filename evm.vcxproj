@@ -24,6 +24,7 @@
     <ClCompile Include="src\convert.cpp" />
     <ClCompile Include="src\download.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\progress.cpp" />
     <ClCompile Include="src\unzip.cpp" />
     <ClCompile Include="src\util.cpp" />
   </ItemGroup>
@@ -32,6 +33,7 @@
     <ClInclude Include="src\config.h" />
     <ClInclude Include="src\download.h" />
     <ClInclude Include="src\path.hpp" />
+    <ClInclude Include="src\progress.h" />
     <ClInclude Include="src\util.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

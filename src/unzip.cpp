@@ -1,8 +1,11 @@
 #include <zlib/unzip.h>
 #include "util.h"
 #include "path.hpp"
+#include <time.h>
 
 #define UNZ_BUFFER_SIZE 64 * 1024
+
+static int last = -1;
 
 bool Util::unzip(const std::wstring& zipFilePathW, const std::wstring& outDirW, Util::unzCallback callback, void* param) {
   unzFile unzfile = unzOpen(Util::w2a(zipFilePathW, CP_ACP).c_str());
@@ -104,15 +107,26 @@ bool Util::unzip(const std::wstring& zipFilePathW, const std::wstring& outDirW, 
           unzCloseCurrentFile(unzfile);
           CloseHandle(hFile);
           break;
-        }
-        else {
+        } else {
           DWORD dWrite = 0;
           BOOL bWriteSuccessed = WriteFile(hFile, readBuffer, nReadFileSize, &dWrite, NULL);
           info.uncompressed += dWrite;
           info.currentUncompressed += dWrite;
-          if (callback) {
-            callback(&info, param);
+          
+          int now = clock();
+          if (now - last > 200) {
+            // progress(userp->size, userp->sum, userp->total, userp->speed * 2);
+            last = now;
+            if (callback) {
+              callback(&info, param);
+            }
+          } else if (info.total == info.uncompressed) {
+            last = now;
+            if (callback) {
+              callback(&info, param);
+            }
           }
+
           if (!bWriteSuccessed) {
             unzCloseCurrentFile(unzfile);
             CloseHandle(hFile);

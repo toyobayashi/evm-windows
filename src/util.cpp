@@ -2,6 +2,7 @@
 #include <ShlObj.h>
 #include "util.h"
 #include "path.hpp"
+#include <PicoSHA2/pichosha2.h>
 
 HANDLE Util::_consoleHandle = nullptr;
 
@@ -23,6 +24,18 @@ void Util::clearLine(unsigned short lineNumber) {
   if (!GetConsoleScreenBufferInfo(_consoleHandle, &csbi)) return;
   if (!FillConsoleOutputAttribute(_consoleHandle, csbi.wAttributes, size, targetFirstCellPosition, &cCharsWritten)) return;
   SetConsoleCursorPosition(_consoleHandle, targetFirstCellPosition);
+}
+
+int Util::getTerminalWidth() {
+  CONSOLE_SCREEN_BUFFER_INFO bInfo;
+  GetConsoleScreenBufferInfo(_consoleHandle, &bInfo);
+  return bInfo.dwSize.X;
+}
+
+int Util::getTerminalCursorPositionToRight() {
+  CONSOLE_SCREEN_BUFFER_INFO bInfo;
+  GetConsoleScreenBufferInfo(_consoleHandle, &bInfo);
+  return bInfo.dwSize.X - bInfo.dwCursorPosition.X;
 }
 
 bool Util::isX64(const std::wstring& p) {
@@ -143,4 +156,14 @@ std::string Util::getArch() {
   IsWow64Process(GetCurrentProcess(), &res);
   return res == 0 ? "ia32" : "x64";
 #endif
+}
+
+std::string Util::sha256(const std::wstring& path) {
+  if (!Path::exists(path)) return "";
+  std::ifstream f(path, std::ios::binary);
+  std::vector<unsigned char> s(picosha2::k_digest_size);
+  picosha2::hash256(f, s.begin(), s.end());
+  std::string hexHash = "";
+  picosha2::bytes_to_hex_string(s.begin(), s.end(), hexHash);
+  return hexHash;
 }

@@ -1,5 +1,5 @@
-#ifndef __INCLUDE_UTIL_HPP__
-#define __INCLUDE_UTIL_HPP__
+#ifndef __INCLUDE_UTIL_H__
+#define __INCLUDE_UTIL_H__
 
 #include <string>
 #include <Windows.h>
@@ -27,7 +27,10 @@ public:
   static std::string getArch();
   static bool unzip(const std::wstring& zipFilePathW, const std::wstring& outDirW, Util::unzCallback, void* param = nullptr);
   static void clearLine(unsigned short);
+  static int getTerminalWidth();
+  static int getTerminalCursorPositionToRight();
   static bool isX64(const std::wstring&);
+  static std::string sha256(const std::wstring&);
 
   static bool createShortcut(
     const std::wstring& lpszFileName,
